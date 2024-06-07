@@ -1,0 +1,98 @@
+pipeline {
+    agent any
+
+    environment {
+        SONAR_HOME = tool "Sonar"
+    }
+
+    stages {
+        stage("Clone Code from GitHub") {
+            steps {
+                git url: "https://github.com/krishnaacharyaa/wanderlust.git", branch: "devops"
+            }
+        }
+
+        stage("SonarQube Quality Analysis") {
+            steps {
+                withSonarQubeEnv("Sonar") {
+                    sh "$SONAR_HOME/bin/sonar-scanner -Dsonar.projectName=wanderlust -Dsonar.projectKey=wanderlust"
+                }
+            }
+            post {
+                success {
+                    emailext(
+                        subject: "Sonar Analysis - Success",
+                        body: "Sonar analysis completed successfully.",
+                        to: "your.email@example.com"
+                    )
+                }
+                failure {
+                    emailext(
+                        subject: "Sonar Analysis - Failure",
+                        body: "Sonar analysis failed.",
+                        to: "your.email@example.com"
+                    )
+                }
+            }
+        }
+
+        stage("OWASP Dependency Check") {
+            steps {
+                dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'dc'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+            post {
+                success {
+                    emailext(
+                        subject: "OWASP Dependency Check - Success",
+                        body: "OWASP Dependency Check completed successfully.",
+                        to: "your.email@example.com"
+                    )
+                }
+                failure {
+                    emailext(
+                        subject: "OWASP Dependency Check - Failure",
+                        body: "OWASP Dependency Check failed.",
+                        to: "your.email@example.com"
+                    )
+                }
+            }
+        }
+
+        stage("Sonar Quality Gate Scan") {
+            steps {
+                timeout(time: 2, unit: "MINUTES") {
+                    waitForQualityGate abortPipeline: false
+                }
+            }
+        }
+
+        stage("Trivy File System Scan") {
+            steps {
+                sh "trivy fs --format  table -o trivy-fs-report.html ."
+            }
+        }
+
+        stage("Deploy using Docker compose") {
+            steps {
+                sh "docker-compose up -d"
+            }
+            post {
+                success {
+                    emailext(
+                        subject: "Deployment Report",
+                        body: "The deployment was successful.",
+                        to: "your.email@example.com"
+                    )
+                }
+                failure {
+                    emailext(
+                        subject: "Deployment Report",
+                        body: "The deployment was failed.",
+                        to: "your.email@example.com"
+                    )
+                }
+            }
+        }
+    }
+}
